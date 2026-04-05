@@ -1,144 +1,160 @@
 <#
 	.SYNOPSIS
-	Download the latest Sophia Script version, depending on what Windows or PowerShell versions are used to
+	Download and expand the latest Sophia Script version, depending on which Windows or PowerShell versions are used to
 
 	.SYNOPSIS
-	Download the latest Sophia Script version, depending on what Windows or PowerShell versions are used to
-	E.g., if you start script on Windows 11 via PowerShell 5.1 you will start downloading Sophia Script for Windows 11 PowerShell 5.1
+	For example, if you start script on Windows 11 via PowerShell 5.1 you will start downloading Sophia Script for Windows 11 PowerShell 5.1
 
-	.EXAMPLE Download and expand Sophia Script archive
-	irm script.sophi.app -useb | iex
-
-	.EXAMPLE Download and expand Wrapper archive
-	iex "& {$(irm script.sophi.app -useb)} -Wrapper"
-
-	.NOTES
-	Current user
+	.EXAMPLE
+	iwr script.sophia.team -useb | iex
 #>
-[CmdletBinding()]
-param
-(
-	[Parameter(Mandatory = $false)]
-	[switch]
-	$Wrapper
-)
+
+Clear-Host
+$Error.Clear()
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$Parameters = @{
-	Uri              = "https://api.github.com/repos/farag2/Sophia-Script-for-Windows/releases/latest"
-	UseBasicParsing   = $true
-}
-$LatestGitHubRelease = (Invoke-RestMethod @Parameters).tag_name
-
-if ((Get-Location).Path -eq $env:USERPROFILE)
+if ($Host.Version.Major -eq 5)
 {
-	$DownloadsFolder = Get-ItemPropertyValue -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" -Name "{374DE290-123F-4565-9164-39C4925E467B}"
-}
-elseif ((Get-Location).Path -eq "$env:SystemRoot\System32")
-{
-	$DownloadsFolder = Get-ItemPropertyValue -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" -Name "{374DE290-123F-4565-9164-39C4925E467B}"
-}
-else
-{
-	$DownloadsFolder = (Get-Location).Path
+	# Progress bar can significantly impact cmdlet performance
+	# https://github.com/PowerShell/PowerShell/issues/2138
+	$Script:ProgressPreference = "SilentlyContinue"
 }
 
-if ($Wrapper)
+# https://github.com/PowerShell/PowerShell/issues/21070
+$Script:CompilerParameters                  = [System.CodeDom.Compiler.CompilerParameters]::new("System.dll")
+$Script:CompilerParameters.TempFiles        = [System.CodeDom.Compiler.TempFileCollection]::new($env:TEMP, $false)
+$Script:CompilerParameters.GenerateInMemory = $true
+
+try
 {
 	$Parameters = @{
-		Uri              = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-		UseBasicParsing  = $true
-	}
-	$LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Wrapper
-	$Parameters = @{
-		Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.Wrapper.v$LatestRelease.zip"
-		OutFile         = "$DownloadsFolder\Sophia.Script.Wrapper.zip"
+		Uri             = "https://api.github.com/repos/farag2/Sophia-Script-for-Windows/releases/latest"
 		UseBasicParsing = $true
-		Verbose         = $true
 	}
-	Invoke-WebRequest @Parameters
-
-	$Version = "Wrapper"
-
-	$Parameters = @{
-		Path            = "$DownloadsFolder\Sophia.Script.Wrapper.zip"
-		DestinationPath = "$DownloadsFolder"
-		Force           = $true
-	}
-	Expand-Archive @Parameters
-
-	Remove-Item -Path "$DownloadsFolder\Sophia.Script.Wrapper.zip" -Force
-
-	Start-Sleep -Second 1
-
-	Invoke-Item -Path "$DownloadsFolder\Sophia Script Wrapper v$LatestRelease"
+	$LatestGitHubRelease = (Invoke-RestMethod @Parameters).tag_name
 }
+catch [System.Net.WebException]
+{
+	Write-Warning -Message "https://api.github.com is unreachable. Please fix connection or change your DNS records."
+	Write-Information -MessageData "" -InformationAction Continue
+
+	if ((Get-CimInstance -ClassName CIM_ComputerSystem).HypervisorPresent)
+	{
+		$DNS = (Get-NetRoute | Where-Object -FilterScript {$_.DestinationPrefix -eq "0.0.0.0/0"} | Get-NetAdapter | Where-Object -FilterScript {$_.Status -eq "Up"} | Get-DnsClientServerAddress -AddressFamily IPv4).ServerAddresses
+	}
+	else
+	{
+		$DNS = (Get-NetAdapter -Physical | Where-Object -FilterScript {$_.Status -eq "Up"} | Get-NetIPInterface -AddressFamily IPv4 | Get-DnsClientServerAddress -AddressFamily IPv4).ServerAddresses
+	}
+	Write-Warning -Message "You're using $(if ($DNS.Count -gt 1) {$DNS -join ', '} else {$DNS}) DNS records"
+
+	Write-Verbose -Message "https://t.me/sophia_chat" -Verbose
+	Write-Verbose -Message "https://discord.gg/sSryhaEv79" -Verbose
+
+	pause
+	exit
+}
+
+$DownloadsFolder = Get-ItemPropertyValue -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" -Name "{374DE290-123F-4565-9164-39C4925E467B}"
+
+$Parameters = @{
+	Uri             = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
+	UseBasicParsing = $true
+}
+$JSONVersions = Invoke-RestMethod @Parameters
 
 switch ((Get-CimInstance -ClassName Win32_OperatingSystem).BuildNumber)
 {
 	"17763"
 	{
-		$Parameters = @{
-			Uri              = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-			UseBasicParsing  = $true
-		}
-		$LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_10_LTSC2019
-		$Parameters = @{
-			Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.10.LTSC.2019.v$LatestRelease.zip"
-			OutFile         = "$DownloadsFolder\Sophia.Script.zip"
-			UseBasicParsing = $true
-			Verbose         = $true
-		}
-
-		$Version = "LTSC2019"
-
-		break
-	}
-	{($_ -ge 19041) -and ($_ -le 19048)}
-	{
-		if ($PSVersionTable.PSVersion.Major -eq 5)
+		# Check for Windows 10 LTSC 2019
+		if ((Get-ItemPropertyValue -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name ProductName) -match "LTSC 2019")
 		{
-			# Check if Windows 10 is an LTSC 2021
-			if ((Get-ItemPropertyValue -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name ProductName) -eq "Windows 10 Enterprise LTSC 2021")
-			{
-				$Parameters = @{
-					Uri              = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-					UseBasicParsing  = $true
-				}
-				$LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_10_LTSC2021
-				$Parameters = @{
-					Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.10.LTSC.2021.v$LatestRelease.zip"
-					OutFile         = "$DownloadsFolder\Sophia.Script.zip"
-					UseBasicParsing = $true
-					Verbose         = $true
-				}
-
-				$Version = "LTSC2021"
+			$LatestRelease = $JSONVersions.Sophia_Script_Windows_10_LTSC2019
+			$Parameters = @{
+				Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.10.LTSC.2019.v$LatestRelease.zip"
+				OutFile         = "$DownloadsFolder\Sophia.Script.zip"
+				UseBasicParsing = $true
+				Verbose         = $true
 			}
-			else
-			{
-				$Parameters = @{
-					Uri              = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-					UseBasicParsing  = $true
-				}
-				$LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_10_PowerShell_5_1
-				$Parameters = @{
-					Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.10.v$LatestRelease.zip"
-					OutFile         = "$DownloadsFolder\Sophia.Script.zip"
-					UseBasicParsing = $true
-					Verbose         = $true
-				}
+			Invoke-WebRequest @Parameters
 
-				$Version = "Windows_10_PowerShell_5.1"
-			}
+			$Version = "Windows_10_LTSC2019"
 		}
 		else
 		{
+			Write-Verbose -Message "Windows version is not supported. Update your Windows and try again." -Verbose
+
+			# Receive updates for other Microsoft products when you update Windows
+			(New-Object -ComObject Microsoft.Update.ServiceManager).AddService2("7971f918-a847-4430-9279-4a52d1efe18d", 7, "")
+
+			# Check for updates
+			& "$env:SystemRoot\System32\UsoClient.exe" StartInteractiveScan
+
+			# Open the "Windows Update" page
+			Start-Process -FilePath "ms-settings:windowsupdate"
+
+			Write-Verbose -Message "https://t.me/sophia_chat" -Verbose
+			Write-Verbose -Message "https://discord.gg/sSryhaEv79" -Verbose
+
+			pause
+			exit
+		}
+	}
+	"19044"
+	{
+		# Check for Windows 10 LTSC 2021
+		if ((Get-ItemPropertyValue -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name ProductName) -match "LTSC 2021")
+		{
+			$LatestRelease = $JSONVersions.Sophia_Script_Windows_10_LTSC2021
 			$Parameters = @{
-				Uri              = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-				UseBasicParsing  = $true
+				Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.10.LTSC.2021.v$LatestRelease.zip"
+				OutFile         = "$DownloadsFolder\Sophia.Script.zip"
+				UseBasicParsing = $true
+				Verbose         = $true
 			}
+			Invoke-WebRequest @Parameters
+
+			$Version = "Windows_10_LTSC2021"
+		}
+		else
+		{
+			Write-Verbose -Message "Windows version is not supported. Update your Windows and try again." -Verbose
+
+			# Receive updates for other Microsoft products when you update Windows
+			(New-Object -ComObject Microsoft.Update.ServiceManager).AddService2("7971f918-a847-4430-9279-4a52d1efe18d", 7, "")
+
+			# Check for updates
+			& "$env:SystemRoot\System32\UsoClient.exe" StartInteractiveScan
+
+			# Open the "Windows Update" page
+			Start-Process -FilePath "ms-settings:windowsupdate"
+
+			Write-Verbose -Message "https://t.me/sophia_chat" -Verbose
+			Write-Verbose -Message "https://discord.gg/sSryhaEv79" -Verbose
+
+			pause
+			exit
+		}
+	}
+	"19045"
+	{
+		if ($Host.Version.Major -eq 5)
+		{
+			$LatestRelease = $JSONVersions.Sophia_Script_Windows_10_PowerShell_5_1
+			$Parameters = @{
+				Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.10.v$LatestRelease.zip"
+				OutFile         = "$DownloadsFolder\Sophia.Script.zip"
+				UseBasicParsing = $true
+				Verbose         = $true
+			}
+			Invoke-WebRequest @Parameters
+
+			$Version = "Windows_10_PowerShell_5_1"
+		}
+		else
+		{
 			$LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_10_PowerShell_7
 			$Parameters = @{
 				Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.10.PowerShell.7.v$LatestRelease.zip"
@@ -146,55 +162,158 @@ switch ((Get-CimInstance -ClassName Win32_OperatingSystem).BuildNumber)
 				UseBasicParsing = $true
 				Verbose         = $true
 			}
+			Invoke-WebRequest @Parameters
 
 			$Version = "Windows_10_PowerShell_7"
 		}
-
 	}
-	{$_ -ge 22000}
+	{$_ -ge 26100}
 	{
-		if ($PSVersionTable.PSVersion.Major -eq 5)
+		# Check for Windows 11 LTSC 2024
+		if ((Get-ItemPropertyValue -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name ProductName) -notmatch "LTSC 2024")
 		{
-			$Parameters = @{
-				Uri              = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-				UseBasicParsing  = $true
-			}
-			$LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_11_PowerShell_5_1
-			$Parameters = @{
-				Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.11.v$LatestRelease.zip"
-				OutFile         = "$DownloadsFolder\Sophia.Script.zip"
-				UseBasicParsing = $true
-				Verbose         = $true
-			}
+			# PowerShell 5.1
+			if ($Host.Version.Major -eq 5)
+			{
+				if ((Get-CimInstance -ClassName CIM_Processor).Caption -match "ARM")
+				{
+					# Arm based
+					$LatestRelease = $JSONVersions.Sophia_Script_Windows_11_Arm_PowerShell_5_1
+					$Parameters = @{
+						Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.11.ARM.v$LatestRelease.zip"
+						OutFile         = "$DownloadsFolder\Sophia.Script.zip"
+						UseBasicParsing = $true
+						Verbose         = $true
+					}
+					Invoke-WebRequest @Parameters
 
-			$Version = "Windows_11_PowerShell_5.1"
+					$Version = "Windows_11_Arm_PowerShell_5_1"
+				}
+				else
+				{
+					$LatestRelease = $JSONVersions.Sophia_Script_Windows_11_PowerShell_5_1
+					$Parameters = @{
+						Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.11.v$LatestRelease.zip"
+						OutFile         = "$DownloadsFolder\Sophia.Script.zip"
+						UseBasicParsing = $true
+						Verbose         = $true
+					}
+					Invoke-WebRequest @Parameters
+
+					$Version = "Windows_11_PowerShell_5_1"
+				}
+			}
+			else
+			{
+				# PowerShell 7
+				if ((Get-CimInstance -ClassName CIM_Processor).Caption -match "ARM")
+				{
+					# Arm based
+					$LatestRelease = $JSONVersions.Sophia_Script_Windows_11_Arm_PowerShell_7
+					$Parameters = @{
+						Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.11.ARM.PowerShell.7.v$LatestRelease.zip"
+						OutFile         = "$DownloadsFolder\Sophia.Script.zip"
+						UseBasicParsing = $true
+						Verbose         = $true
+					}
+					Invoke-WebRequest @Parameters
+
+					$Version = "Windows_11_Arm_PowerShell_7"
+				}
+				else
+				{
+					$LatestRelease = $JSONVersions.Sophia_Script_Windows_11_PowerShell_7
+					$Parameters = @{
+						Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.11.PowerShell.7.v$LatestRelease.zip"
+						OutFile         = "$DownloadsFolder\Sophia.Script.zip"
+						UseBasicParsing = $true
+						Verbose         = $true
+					}
+					Invoke-WebRequest @Parameters
+
+					$Version = "Windows_11_PowerShell_7"
+				}
+			}
 		}
 		else
 		{
-			$Parameters = @{
-				Uri              = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-				UseBasicParsing  = $true
-			}
-			$LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_11_PowerShell_7
-			$Parameters = @{
-				Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.11.PowerShell.7.v$LatestRelease.zip"
-				OutFile         = "$DownloadsFolder\Sophia.Script.zip"
-				UseBasicParsing = $true
-				Verbose         = $true
-			}
+			# PowerShell 5.1
+			if ($Host.Version.Major -eq 5)
+			{
+				$LatestRelease = $JSONVersions.Sophia_Script_Windows_11_LTSC2024_PowerShell_5_1
+				$Parameters = @{
+					Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.11.LTSC.2024.v$LatestRelease.zip"
+					OutFile         = "$DownloadsFolder\Sophia.Script.zip"
+					UseBasicParsing = $true
+					Verbose         = $true
+				}
+				Invoke-WebRequest @Parameters
 
-			$Version = "Windows_11_PowerShell_7"
+				$Version = "Windows_11_LTSC2024_PowerShell_5_1"
+			}
+			else
+			{
+				# PowerShell 7
+				$LatestRelease = $JSONVersions.Sophia_Script_Windows_11_LTSC2024_PowerShell_7
+				$Parameters = @{
+					Uri             = "https://github.com/farag2/Sophia-Script-for-Windows/releases/download/$LatestGitHubRelease/Sophia.Script.for.Windows.11.LTSC.2024.PowerShell.7.v$LatestRelease.zip"
+					OutFile         = "$DownloadsFolder\Sophia.Script.zip"
+					UseBasicParsing = $true
+					Verbose         = $true
+				}
+				Invoke-WebRequest @Parameters
+
+				$Version = "Windows_11_LTSC2024_PowerShell_7"
+			}
 		}
 	}
-}
-Invoke-WebRequest @Parameters
+	default
+	{
+		Write-Verbose -Message "Windows version is not supported. Update your Windows and try again." -Verbose
 
-$Parameters = @{
-	Path            = "$DownloadsFolder\Sophia.Script.zip"
-	DestinationPath = "$DownloadsFolder"
-	Force           = $true
+		# Receive updates for other Microsoft products when you update Windows
+		(New-Object -ComObject Microsoft.Update.ServiceManager).AddService2("7971f918-a847-4430-9279-4a52d1efe18d", 7, "")
+
+		# Check for updates
+		& "$env:SystemRoot\System32\UsoClient.exe" StartInteractiveScan
+
+		# Open the "Windows Update" page
+		Start-Process -FilePath "ms-settings:windowsupdate"
+
+		Write-Verbose -Message "https://t.me/sophia_chat" -Verbose
+		Write-Verbose -Message "https://discord.gg/sSryhaEv79" -Verbose
+
+		pause
+		exit
+	}
 }
-Expand-Archive @Parameters
+
+try
+{
+	$Parameters = @{
+		Path            = "$DownloadsFolder\Sophia.Script.zip"
+		DestinationPath = "$DownloadsFolder"
+		ErrorAction     = "Stop"
+		Force           = $true
+	}
+	Expand-Archive @Parameters
+}
+catch
+{
+	Write-Verbose -Message "Archive cannot be expanded. Probably, this was caused by your antivirus. Please update its definitions and try again." -Verbose
+
+	# Check for updates
+	& "$env:SystemRoot\System32\UsoClient.exe" StartInteractiveScan
+
+	# Open t"Windows Update" page
+	Start-Process -FilePath "ms-settings:windowsupdate"
+
+	Write-Verbose -Message "https://t.me/sophia_chat" -Verbose
+	Write-Verbose -Message "https://discord.gg/sSryhaEv79" -Verbose
+
+	pause
+	exit
+}
 
 Remove-Item -Path "$DownloadsFolder\Sophia.Script.zip" -Force
 
@@ -202,41 +321,104 @@ Start-Sleep -Second 1
 
 switch ($Version)
 {
-	"Wrapper"
+	"Windows_10_LTSC2019"
 	{
-		Invoke-Item -Path "$DownloadsFolder\Sophia Script Wrapper v$LatestRelease"
+		Invoke-Item -Path "$DownloadsFolder\Sophia_Script_for_Windows_10_LTSC_2019_v$LatestRelease"
+
+		if ((([System.Security.Principal.WindowsIdentity]::GetCurrent()).Owner -eq "S-1-5-32-544"))
+		{
+			Set-Location -Path "$DownloadsFolder\Sophia_Script_for_Windows_10_LTSC_2019_v$LatestRelease"
+		}
 	}
-	"LTSC2019"
+	"Windows_10_LTSC2021"
 	{
-		Invoke-Item -Path "$DownloadsFolder\Sophia Script for Windows 10 LTSC 2019 v$LatestRelease"
+		Invoke-Item -Path "$DownloadsFolder\Sophia_Script_for_Windows_10_LTSC_2021_v$LatestRelease"
+
+		if ((([System.Security.Principal.WindowsIdentity]::GetCurrent()).Owner -eq "S-1-5-32-544"))
+		{
+			Set-Location -Path "$DownloadsFolder\Sophia_Script_for_Windows_10_LTSC_2021_v$LatestRelease"
+		}
 	}
-	"LTSC2021"
+	"Windows_11_LTSC2024_PowerShell_5_1"
 	{
-		Invoke-Item -Path "$DownloadsFolder\Sophia Script for Windows 10 LTSC 2021 v$LatestRelease"
+		Invoke-Item -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_LTSC_2024_v$LatestRelease"
+
+		if ((([System.Security.Principal.WindowsIdentity]::GetCurrent()).Owner -eq "S-1-5-32-544"))
+		{
+			Set-Location -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_LTSC_2024_v$LatestRelease"
+		}
 	}
-	"Windows_10_PowerShell_5.1"
+	"Windows_11_LTSC2024_PowerShell_7"
 	{
-		Invoke-Item -Path "$DownloadsFolder\Sophia Script for Windows 10 v$LatestRelease"
+		Invoke-Item -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_LTSC_2024_PowerShell_7_v$LatestRelease"
+
+		if ((([System.Security.Principal.WindowsIdentity]::GetCurrent()).Owner -eq "S-1-5-32-544"))
+		{
+			Set-Location -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_LTSC_2024_PowerShell_7_v$LatestRelease"
+		}
+	}
+	"Windows_10_PowerShell_5_1"
+	{
+		Invoke-Item -Path "$DownloadsFolder\Sophia_Script_for_Windows_10_v$LatestRelease"
+
+		if ((([System.Security.Principal.WindowsIdentity]::GetCurrent()).Owner -eq "S-1-5-32-544"))
+		{
+			Set-Location -Path "$DownloadsFolder\Sophia_Script_for_Windows_10_v$LatestRelease"
+		}
 	}
 	"Windows_10_PowerShell_7"
 	{
-		Invoke-Item -Path "$DownloadsFolder\Sophia Script for Windows 10  PowerShell 7 v$LatestRelease"
+		Invoke-Item -Path "$DownloadsFolder\Sophia_Script_for_Windows_10_PowerShell_7_v$LatestRelease"
+
+		if ((([System.Security.Principal.WindowsIdentity]::GetCurrent()).Owner -eq "S-1-5-32-544"))
+		{
+			Set-Location -Path "$DownloadsFolder\Sophia_Script_for_Windows_10_PowerShell_7_v$LatestRelease"
+		}
 	}
-	"Windows_11_PowerShell_5.1"
+	"Windows_11_PowerShell_5_1"
 	{
-		Invoke-Item -Path "$DownloadsFolder\Sophia Script for Windows 11 v$LatestRelease"
+		Invoke-Item -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_v$LatestRelease"
+
+		if ((([System.Security.Principal.WindowsIdentity]::GetCurrent()).Owner -eq "S-1-5-32-544"))
+		{
+			Set-Location -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_v$LatestRelease"
+		}
 	}
 	"Windows_11_PowerShell_7"
 	{
-		Invoke-Item -Path "$DownloadsFolder\Sophia Script for Windows 11 PowerShell 7 v$LatestRelease"
+		Invoke-Item -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_PowerShell_7_v$LatestRelease"
+
+		if ((([System.Security.Principal.WindowsIdentity]::GetCurrent()).Owner -eq "S-1-5-32-544"))
+		{
+			Set-Location -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_PowerShell_7_v$LatestRelease"
+		}
+	}
+	"Windows_11_Arm_PowerShell_5_1"
+	{
+		Invoke-Item -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_Arm_v$LatestRelease"
+
+		if ((([System.Security.Principal.WindowsIdentity]::GetCurrent()).Owner -eq "S-1-5-32-544"))
+		{
+			Set-Location -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_Arm_v$LatestRelease"
+		}
+	}
+	"Windows_11_Arm_PowerShell_7"
+	{
+		Invoke-Item -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_Arm_PowerShell_7_v$LatestRelease"
+
+		if ((([System.Security.Principal.WindowsIdentity]::GetCurrent()).Owner -eq "S-1-5-32-544"))
+		{
+			Set-Location -Path "$DownloadsFolder\Sophia_Script_for_Windows_11_Arm_PowerShell_7_v$LatestRelease"
+		}
 	}
 }
 
-$SetForegroundWindow = @{
-	Namespace = "WinAPI"
-	Name      = "ForegroundWindow"
-	Language  = "CSharp"
-	MemberDefinition = @"
+$Signature = @{
+	Namespace          = "WinAPI"
+	Name               = "ForegroundWindow"
+	Language           = "CSharp"
+	CompilerParameters = $CompilerParameters
+	MemberDefinition   = @"
 [DllImport("user32.dll")]
 public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
 [DllImport("user32.dll")]
@@ -244,14 +426,23 @@ public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
 public static extern bool SetForegroundWindow(IntPtr hWnd);
 "@
 }
+
+# PowerShell 7 has CompilerOptions argument instead of CompilerParameters as PowerShell 5 has
+# https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/add-type#-compileroptions
+if ($Host.Version.Major -eq 7)
+{
+	$Signature.Remove("CompilerParameters")
+	$Signature.Add("CompilerOptions", $CompilerParameters)
+}
+
 if (-not ("WinAPI.ForegroundWindow" -as [type]))
 {
-	Add-Type @SetForegroundWindow
+	Add-Type @Signature
 }
 
 Start-Sleep -Seconds 1
 
-Get-Process -Name explorer | Where-Object -FilterScript {$_.MainWindowTitle -match "Sophia Script for Windows $([System.Environment]::OSVersion.Version.Major)"} | ForEach-Object -Process {
+Get-Process -Name explorer | Where-Object -FilterScript {$_.MainWindowTitle -match "Sophia_Script_for_Windows_$([System.Environment]::OSVersion.Version.Major)"} | ForEach-Object -Process {
 	# Show window, if minimized
 	[WinAPI.ForegroundWindow]::ShowWindowAsync($_.MainWindowHandle, 5)
 

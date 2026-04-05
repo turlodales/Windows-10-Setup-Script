@@ -1,0 +1,33 @@
+name: WinGet push
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Preparation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          . "Scripts\WinGet.ps1"
+
+      - name: Publish to WinGet
+        run: |
+          # %LOCALAPPDATA%\Microsoft\WinGet\Packages
+          # Get the latest wingetcreate
+          # https://github.com/microsoft/winget-create
+          # https://github.com/microsoft/winget-pkgs/blob/master/Tools/YamlCreate.ps1
+          $Parameters = @{
+            Uri             = "https://aka.ms/wingetcreate/latest"
+            OutFile         = "wingetcreate.exe"
+            UseBasicParsing = $true
+          }
+          Invoke-WebRequest @Parameters
+
+          .\wingetcreate.exe submit --prtitle "New Version: TeamSophia.SophiaScript version $Version" --token "${{ secrets.WINGET_PAT }}" "Scripts\WinGet_Manifests"

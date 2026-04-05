@@ -1,319 +1,106 @@
 name: Build
 
-on:
-  push:
-    tags:
-      - '*.*.*'
-      - '*.*'
+on: 
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release"
+        required: true
 
 jobs:
   patch:
     runs-on: windows-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@master
-      - name: Dependencies
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Run Lint
         run: |
-          Write-Verbose -Message Dependencies -Verbose
+          . "Scripts\Lint.ps1"
 
-          # Download PolicyFileEditor
-          # https://github.com/dlwyatt/PolicyFileEditor
-          $Parameters = @{
-              Uri            = "https://api.github.com/repos/dlwyatt/PolicyFileEditor/releases/latest"
-              UseBasicParsing = $true
-          }
-          $LatestPolicyFileEditorVersion = (Invoke-RestMethod @Parameters).tag_name
-
-          $Parameters = @{
-              Uri             = "https://github.com/dlwyatt/PolicyFileEditor/archive/refs/tags/$LatestPolicyFileEditorVersion.zip"
-              OutFile         = "$PSScriptRoot\$LatestPolicyFileEditorVersion.zip"
-              UseBasicParsing = $true
-              Verbose         = $true
-          }
-          Invoke-WebRequest @Parameters
-
-          # Expand zip archive
-          $Parameters = @{
-              Path            = "$PSScriptRoot\$LatestPolicyFileEditorVersion.zip"
-              DestinationPath = "$PSScriptRoot"
-              Force           = $true
-              Verbose         = $true
-          }
-          Expand-Archive @Parameters
-
-          $Path = @(
-              "$PSScriptRoot\PolicyFileEditor-$LatestPolicyFileEditorVersion\DscResources",
-              "$PSScriptRoot\PolicyFileEditor-$LatestPolicyFileEditorVersion\en-US",
-              "$PSScriptRoot\PolicyFileEditor-$LatestPolicyFileEditorVersion\build.psake.ps1",
-              "$PSScriptRoot\PolicyFileEditor-$LatestPolicyFileEditorVersion\LICENSE",
-              "$PSScriptRoot\PolicyFileEditor-$LatestPolicyFileEditorVersion\PolicyFileEditor.Tests.ps1",
-              "$PSScriptRoot\PolicyFileEditor-$LatestPolicyFileEditorVersion\README.md"
-          )
-          Remove-Item -Path $Path -Recurse -Force
-
-          Rename-Item -Path "$PSScriptRoot\PolicyFileEditor-$LatestPolicyFileEditorVersion" -NewName "$PSScriptRoot\PolicyFileEditor" -Force
-
-          # Download Microsoft.Windows.SDK.NET.dll & WinRT.Runtime.dll
-          $Parameters = @{
-              Uri             = "https://www.nuget.org/api/v2/package/Microsoft.Windows.SDK.NET.Ref"
-              OutFile         = "$PSScriptRoot\microsoft.windows.sdk.net.ref.nupkg"
-              UseBasicParsing = $true
-          }
-          Invoke-RestMethod @Parameters
-
-          # Rename archive to able to expand it
-          Rename-Item -Path "$PSScriptRoot\microsoft.windows.sdk.net.ref.nupkg" -NewName "$PSScriptRoot\microsoft.windows.sdk.net.ref.zip" -Force
-
-          # Extract Microsoft.Windows.SDK.NET.dll & WinRT.Runtime.dll from archive
-          Add-Type -Assembly System.IO.Compression.FileSystem
-          $ZIP = [IO.Compression.ZipFile]::OpenRead("$PSScriptRoot\microsoft.windows.sdk.net.ref.zip")
-          $Entries = $ZIP.Entries | Where-Object -FilterScript {($_.FullName -eq "lib/Microsoft.Windows.SDK.NET.dll") -or ($_.FullName -eq "lib/WinRT.Runtime.dll")}
-          $Entries | ForEach-Object -Process {[IO.Compression.ZipFileExtensions]::ExtractToFile($_, "$PSScriptRoot\$($_.Name)", $true)}
-          $ZIP.Dispose()
-
-      - name: Sophia Script for Windows 10
+      - name: Download Dependencies
         run: |
-          # https://github.com/farag2/Sophia-Script-for-Windows/blob/master/sophia_script_versions.json
-          $Parameters = @{
-            Uri = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-          }
-          $LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_10_PowerShell_5_1
+          . "Scripts\Dependencies.ps1"
 
-          Write-Verbose -Message "Sophia.Script.for.Windows.10.v$LatestRelease.zip" -Verbose
-
-          New-Item -Path "Sophia Script for Windows 10 v$LatestRelease\bin" -ItemType Directory -Force
-          $Parameters = @{
-              Path            = @("$PSScriptRoot\PolicyFileEditor")
-              Destination     = "Sophia Script for Windows 10 v$LatestRelease\bin"
-              Recurse         = $true
-              Force           = $true
-          }
-          Copy-Item @Parameters
-          Get-ChildItem -Path "Sophia Script\Sophia Script for Windows 10" -Force | Copy-Item -Destination "Sophia Script for Windows 10 v$LatestRelease" -Recurse -Force
-
-          $Parameters = @{
-              Path             = "Sophia Script for Windows 10 v$LatestRelease"
-              DestinationPath  = "Sophia.Script.for.Windows.10.v$LatestRelease.zip"
-              CompressionLevel = "Fastest"
-              Force            = $true
-          }
-          Compress-Archive @Parameters
-
-          # Calculate hash
-          Get-Item -Path "Sophia.Script.for.Windows.10.v$LatestRelease.zip" -Force | ForEach-Object -Process {
-              "$($_.Name)  $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
-          } | Add-Content -Path SHA256SUM -Encoding Default -Force
-
-      - name: Sophia Script for Windows 10 PowerShell 7
+      - name: Windows 10
         run: |
-          # https://github.com/farag2/Sophia-Script-for-Windows/blob/master/sophia_script_versions.json
-          $Parameters = @{
-            Uri = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-          }
-          $LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_10_PowerShell_7
+          . "Scripts\Windows_10.ps1"
 
-          Write-Verbose -Message "Sophia.Script.for.Windows.10.PowerShell.7.v$LatestRelease.zip" -Verbose
-
-          New-Item -Path "Sophia Script for Windows 10 PowerShell 7 v$LatestRelease\bin" -ItemType Directory -Force
-
-          $Parameters = @{
-              Path            = @("$PSScriptRoot\PolicyFileEditor", "$PSScriptRoot\WinRT.Runtime.dll", "$PSScriptRoot\Microsoft.Windows.SDK.NET.dll")
-              Destination     = "Sophia Script for Windows 10 PowerShell 7 v$LatestRelease\bin"
-              Recurse         = $true
-              Force           = $true
-          }
-          Copy-Item @Parameters
-
-          Get-ChildItem -Path "Sophia Script\Sophia Script for Windows 10 PowerShell 7" -Force | Copy-Item -Destination "Sophia Script for Windows 10 PowerShell 7 v$LatestRelease" -Recurse -Force
-
-          $Parameters = @{
-              Path             = "Sophia Script for Windows 10 PowerShell 7 v$LatestRelease"
-              DestinationPath  = "Sophia.Script.for.Windows.10.PowerShell.7.v$LatestRelease.zip"
-              CompressionLevel = "Fastest"
-              Force            = $true
-          }
-          Compress-Archive @Parameters
-
-          # Calculate hash
-          Get-Item -Path "Sophia.Script.for.Windows.10.PowerShell.7.v$LatestRelease.zip" -Force | ForEach-Object -Process {
-              "$($_.Name)  $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
-          } | Add-Content -Path SHA256SUM -Encoding Default -Force
-
-      - name: Sophia Script for Windows 10 LTSC 2019
+      - name: Windows 10 PowerShell 7
         run: |
-          # https://github.com/farag2/Sophia-Script-for-Windows/blob/master/sophia_script_versions.json
-          $Parameters = @{
-            Uri = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-          }
-          $LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_10_LTSC2019
+          . "Scripts\Windows_10_PS_7.ps1"
 
-          Write-Verbose -Message "Sophia.Script.for.Windows.10.LTSC.2019.v$LatestRelease.zip" -Verbose
-
-          New-Item -Path "Sophia Script for Windows 10 LTSC 2019 v$LatestRelease\bin" -ItemType Directory -Force
-          $Parameters = @{
-              Path            = @("$PSScriptRoot\PolicyFileEditor")
-              Destination     = "Sophia Script for Windows 10 LTSC 2019 v$LatestRelease\bin"
-              Recurse         = $true
-              Force           = $true
-          }
-          Copy-Item @Parameters
-          Get-ChildItem -Path "Sophia Script\Sophia Script for Windows 10 LTSC 2019" -Force | Copy-Item -Destination "Sophia Script for Windows 10 LTSC 2019 v$LatestRelease" -Recurse -Force
-
-          $Parameters = @{
-              Path             = "Sophia Script for Windows 10 LTSC 2019 v$LatestRelease"
-              DestinationPath  = "Sophia.Script.for.Windows.10.LTSC.2019.v$LatestRelease.zip"
-              CompressionLevel = "Fastest"
-              Force            = $true
-          }
-          Compress-Archive @Parameters
-
-          # Calculate hash
-          Get-Item -Path "Sophia.Script.for.Windows.10.LTSC.2019.v$LatestRelease.zip" -Force | ForEach-Object -Process {
-              "$($_.Name)  $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
-          } | Add-Content -Path SHA256SUM -Encoding Default -Force
-
-      - name: Sophia Script for Windows 10 LTSC 2021
+      - name: Windows 10 LTSC 2019
         run: |
-          # https://github.com/farag2/Sophia-Script-for-Windows/blob/master/sophia_script_versions.json
-          $Parameters = @{
-            Uri = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-          }
-          $LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_10_LTSC2021
+          . "Scripts\Windows_10_LTSC_2019.ps1"
 
-          Write-Verbose -Message "Sophia.Script.for.Windows.10.LTSC.2021.v$LatestRelease.zip" -Verbose
-
-          New-Item -Path "Sophia Script for Windows 10 LTSC 2021 v$LatestRelease\bin" -ItemType Directory -Force
-          $Parameters = @{
-              Path            = @("$PSScriptRoot\PolicyFileEditor")
-              Destination     = "Sophia Script for Windows 10 LTSC 2021 v$LatestRelease\bin"
-              Recurse         = $true
-              Force           = $true
-          }
-          Copy-Item @Parameters
-          Get-ChildItem -Path "Sophia Script\Sophia Script for Windows 10 LTSC 2021" -Force | Copy-Item -Destination "Sophia Script for Windows 10 LTSC 2021 v$LatestRelease" -Recurse -Force
-
-          $Parameters = @{
-              Path             = "Sophia Script for Windows 10 LTSC 2021 v$LatestRelease"
-              DestinationPath  = "Sophia.Script.for.Windows.10.LTSC.2021.v$LatestRelease.zip"
-              CompressionLevel = "Fastest"
-              Force            = $true
-          }
-          Compress-Archive @Parameters
-
-          # Calculate hash
-          Get-Item -Path "Sophia.Script.for.Windows.10.LTSC.2021.v$LatestRelease.zip" -Force | ForEach-Object -Process {
-              "$($_.Name)  $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
-          } | Add-Content -Path SHA256SUM -Encoding Default -Force
-
-      - name: Sophia Script for Windows 11
+      - name: Windows 10 LTSC 2021
         run: |
-          # https://github.com/farag2/Sophia-Script-for-Windows/blob/master/sophia_script_versions.json
-          $Parameters = @{
-            Uri = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-          }
-          $LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_11_PowerShell_5_1
+          . "Scripts\Windows_10_LTSC_2021.ps1"
 
-          Write-Verbose -Message "Sophia.Script.for.Windows.11.v$LatestRelease.zip" -Verbose
-
-          New-Item -Path "Sophia Script for Windows 11 v$LatestRelease\bin" -ItemType Directory -Force
-          $Parameters = @{
-              Path            = @("$PSScriptRoot\PolicyFileEditor")
-              Destination     = "Sophia Script for Windows 11 v$LatestRelease\bin"
-              Recurse         = $true
-              Force           = $true
-          }
-          Copy-Item @Parameters
-          Get-ChildItem -Path "Sophia Script\Sophia Script for Windows 11" -Force | Copy-Item -Destination "Sophia Script for Windows 11 v$LatestRelease" -Recurse -Force
-
-          $Parameters = @{
-              Path             = "Sophia Script for Windows 11 v$LatestRelease"
-              DestinationPath  = "Sophia.Script.for.Windows.11.v$LatestRelease.zip"
-              CompressionLevel = "Fastest"
-              Force            = $true
-          }
-          Compress-Archive @Parameters
-
-          # Calculate hash
-          Get-Item -Path "Sophia.Script.for.Windows.11.v$LatestRelease.zip" -Force | ForEach-Object -Process {
-              "$($_.Name)  $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
-          } | Add-Content -Path SHA256SUM -Encoding Default -Force
-
-      - name: Sophia Script for Windows 11 PowerShell 7
+      - name: Windows 11
         run: |
-          # https://github.com/farag2/Sophia-Script-for-Windows/blob/master/sophia_script_versions.json
-          $Parameters = @{
-            Uri = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-          }
-          $LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Windows_11_PowerShell_7
+          . "Scripts\Windows_11.ps1"
 
-          Write-Verbose -Message "Sophia.Script.for.Windows.11.PowerShell.7.v$LatestRelease.zip" -Verbose
+      - name: Windows 11 PowerShell 7
+        run: |
+          . "Scripts\Windows_11_PS_7.ps1"
 
-          New-Item -Path "Sophia Script for Windows 11 PowerShell 7 v$LatestRelease\bin" -ItemType Directory -Force
-          $Parameters = @{
-              Path            = @("$PSScriptRoot\PolicyFileEditor", "$PSScriptRoot\WinRT.Runtime.dll", "$PSScriptRoot\Microsoft.Windows.SDK.NET.dll")
-              Destination     = "Sophia Script for Windows 11 PowerShell 7 v$LatestRelease\bin"
-              Recurse         = $true
-              Force           = $true
-          }
-          Copy-Item @Parameters
+      - name: Sophia Script for Windows 11 Arm
+        run: |
+          . "Scripts\Windows_11_Arm.ps1"
 
-          Get-ChildItem -Path "Sophia Script\Sophia Script for Windows 11 PowerShell 7" -Force | Copy-Item -Destination "Sophia Script for Windows 11 PowerShell 7 v$LatestRelease" -Recurse -Force
+      - name: Windows 11 Arm PowerShell 7
+        run: |
+          . "Scripts\Windows_11_Arm_PS_7.ps1"
 
-          $Parameters = @{
-              Path             = "Sophia Script for Windows 11 PowerShell 7 v$LatestRelease"
-              DestinationPath  = "Sophia.Script.for.Windows.11.PowerShell.7.v$LatestRelease.zip"
-              CompressionLevel = "Fastest"
-              Force            = $true
-          }
-          Compress-Archive @Parameters
+      - name: Windows 11 LTSC 2024
+        run: |
+          . "Scripts\Windows_11_LTSC_2024.ps1"
 
-          # Calculate hash
-          Get-Item -Path "Sophia.Script.for.Windows.11.PowerShell.7.v$LatestRelease.zip" -Force | ForEach-Object -Process {
-              "$($_.Name)  $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
-          } | Add-Content -Path SHA256SUM -Encoding Default -Force
+      - name: Windows 11 LTSC 2024 PowerShell 7
+        run: |
+          . "Scripts\Windows_11_LTSC_2024_PS7.ps1"
 
       - name: Sophia Script Wrapper
         run: |
-          # https://github.com/farag2/Sophia-Script-for-Windows/blob/master/sophia_script_versions.json
-          $Parameters = @{
-            Uri = "https://raw.githubusercontent.com/farag2/Sophia-Script-for-Windows/master/sophia_script_versions.json"
-          }
-          $LatestRelease = (Invoke-RestMethod @Parameters).Sophia_Script_Wrapper
+          . "Scripts\Wrapper.ps1"
 
-          Write-Verbose -Message "Sophia.Script.Wrapper.v$LatestRelease.zip" -Verbose
+      - name: Create SFX Archive
+        run: |
+          . "Scripts\WinGet_SFX.ps1"
 
-          New-Item -Path "Sophia Script Wrapper v$LatestRelease" -ItemType Directory -Force
-          Get-ChildItem -Path Wrapper -Exclude README.md -Force | Copy-Item -Destination "Sophia Script Wrapper v$LatestRelease" -Recurse -Force
+      - name: Defender Scan
+        run: |
+          # Get Defender path
+          $DefenderPath = (Get-ChildItem -Path "$env:ProgramData\Microsoft\Windows Defender\Platform" -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
+          # Update Defender definitions
+          & "$DefenderPath\MpCmdRun.exe" -SignatureUpdate -Verbose
+          # Start scan
+          # We need to use absolute path
+          & "$DefenderPath\MpCmdRun.exe" -Scan -ScanType 3 -DisableRemediation -File $((Get-Item -Path Sophia_Script).FullName) | ForEach-Object {Write-Verbose -Message $_ -Verbose}
 
-          $Parameters = @{
-              Path             = "Sophia Script Wrapper v$LatestRelease"
-              DestinationPath  = "Sophia.Script.Wrapper.v$LatestRelease.zip"
-              CompressionLevel = "Fastest"
-              Force            = $true
-          }
-          Compress-Archive @Parameters
+          Get-Content -Path $env:TEMP\MpCmdRun.log
 
-          # Calculate hash
-          Get-Item -Path "Sophia.Script.Wrapper.v$LatestRelease.zip" -Force | ForEach-Object -Process {
-              "$($_.Name)  $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
-          } | Add-Content -Path SHA256SUM -Encoding Default -Force
+      - name: Release Notes Template
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Set $env:GITHUB_REF_NAME variable to use in ps1 file instead of ${{ github.ref_name }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          . "Scripts\ReleaseNotesTemplate.ps1"
 
-      - name: Upload archives to release
-        uses: svenstaro/upload-release-action@master
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: Sophia*.zip
-          tag: ${{ github.ref }}
-          overwrite: true
-          file_glob: true
-          prerelease: true
+      - name: Uploading
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $Tag   = "${{ inputs.tag }}"
+          $ZIP = @((Get-Item -Path "Sophia_Script\Sophia*.zip").FullName)
+          $EXE = @((Get-Item -Path "Sophia_Script\Sophia*.exe").FullName)
+          $Files = $ZIP + $EXE
+          $Title = "${{ steps.read_release.outputs.RELEASE_NAME }}"
 
-      - name: Upload archives to release
-        uses: svenstaro/upload-release-action@master
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: SHA256SUM
-          tag: ${{ github.ref }}
-          overwrite: true
-          file_glob: true
-          prerelease: true
+          gh release create $Tag $Files --title $Title --notes-file ReleaseNotesTemplate.md
